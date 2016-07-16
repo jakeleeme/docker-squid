@@ -2,12 +2,12 @@ FROM ubuntu:xenial
 MAINTAINER Jake Lee <jake@jakelee.net>
 WORKDIR /tmp
 
-ENV SQUID_CACHE_DIR=/var/spool/squid
+ENV SQUID_CACHE_DIR=/var/cache/squid
 ENV SQUID_LOG_DIR=/var/log/squid
 ENV SQUID_USER=proxy
-ENV SQUID_VERSION=3.5.20
+ENV SQUID_VERSION=4.0.12
 ENV SQUID_ARCHIVE=squid-${SQUID_VERSION}
-ENV SQUID_DOWNLOAD_URL=http://www.squid-cache.org/Versions/v3/3.5/${SQUID_ARCHIVE}.tar.gz
+ENV SQUID_DOWNLOAD_URL=http://www.squid-cache.org/Versions/v4/${SQUID_ARCHIVE}.tar.gz
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \

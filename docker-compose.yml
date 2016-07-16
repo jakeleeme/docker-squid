@@ -6,6 +6,6 @@ services:
     ports:
       - "3128:3128"
     volumes:
-      - cache:/var/spool/squid
+      - cache:/var/cache/squid
 volumes:
   cache: {}
