@@ -1,8 +1,20 @@
-#!/usr/bin/bash
+#!/usr/bin/python
 
-proxy_servers=$(cat mirrors.txt)
+from __future__ import division, print_function
 
-cat <<EOF
+import os
+
+try:
+  from urlparse import urlparse
+except ImportError:
+  from urllib import parse as urlparse
+
+ENV = {
+  'SQUID_CACHE_DIR': '/var/cache/squid',
+}
+ENV.update(os.environ)
+
+CONFIG_CHUNK0 = '''\
 # Squid normally listens to port 3128
 http_port 3128
 
@@ -12,14 +24,14 @@ maximum_object_size_in_memory 4 MB
 memory_replacement_policy lru
 
 # Add a disk cache directory.
-cache_dir aufs ${SQUID_CACHE_DIR} 16384 16 256
+cache_dir aufs {SQUID_CACHE_DIR} 16384 16 256
 cache_replacement_policy heap GDSF
 cache_swap_low 94
 cache_swap_high 95
 maximum_object_size 1 GB
 
 # Leave coredumps in the first cache dir
-coredump_dir ${SQUID_CACHE_DIR}
+coredump_dir {SQUID_CACHE_DIR}
 
 # Example rule allowing access from your local networks.
 # Adapt to list your (internal) IP networks from where browsing
@@ -61,46 +73,29 @@ http_access deny manager
 # one who can access services on "localhost" is a local user
 http_access deny to_localhost
 
-EOF
-
-cat <<EOF
 # Caching for archive.ubuntu.com.local
 acl ubuntu_archive_mirror dstdomain archive.ubuntu.com archive.ubuntu.com.local
 acl ubuntu_archive_path urlpath_regex ^/ubuntu/
+'''
 
-EOF
+CONFIG_CHUNK1a = '''\
+# {url}
+acl {name} dstdomain {hostname}
+acl ubuntu_archive_mirror dstdomain {hostname}
+cache_peer {hostname} parent {port} 0 no-query weighted-round-robin weight=2 originserver allow-miss forceddomain={hostname} max-conn=4 name={name}
+cache_peer_access {name} deny !ubuntu_archive_path
+cache_peer_access {name} deny {name}
+cache_peer_access {name} allow ubuntu_archive_mirror
+cache_peer_access {name} deny all
+'''
 
-i=0
-for proxy in $proxy_servers; do
-  i=$((i + 1))
-  echo "# ${proxy}"
-  proxy_name=ubuntu_archive_peer${i}
-  proxy_host=$(echo "$proxy" | sed -r 's@http://([^/]+?)/.*$@\1@')
-  proxy_hostname=$(echo "$proxy_host" | sed -r 's/:[0-9]*$//')
-  if [[ "$proxy_hostname" == 'archive.ubuntu.com' ]]; then
-    continue
-  fi
-  proxy_port=$(echo "$proxy_hostname" | sed -rn 's/^.*[^:]:([0-9]+)$/\1/p')
-  if [[ x"$proxy_port" == "x" ]]; then
-    proxy_port=80
-  fi
-  proxy_path=$(echo "$proxy" | sed -r 's@http://[^/]+(/.*)$@\1@')
-  if [[ "$proxy_path" == '/ubuntu/' ]]; then
-    echo "acl $proxy_name dstdomain $proxy_hostname"
-    echo "acl ubuntu_archive_mirror dstdomain $proxy_hostname"
-    echo "cache_peer $proxy_hostname parent $proxy_port 0 no-query weighted-round-robin weight=2 originserver allow-miss forceddomain=${proxy_host} max-conn=4 name=$proxy_name"
-    echo "cache_peer_access $proxy_name deny !ubuntu_archive_path"
-    echo "cache_peer_access $proxy_name deny $proxy_name"
-    echo "cache_peer_access $proxy_name allow ubuntu_archive_mirror"
-    echo "cache_peer_access $proxy_name deny all"
-  else
-    echo "acl $proxy_name url_regex ^${proxy}.*$"
-    echo "http_access deny $proxy_name"
-  fi
-  echo ''
-done
+CONFIG_CHUNK1b = '''\
+# {url}
+acl {name} url_regex ^{url}.*$
+http_access deny {name}
+'''
 
-cat <<EOF
+CONFIG_CHUNK2 = '''\
 # archive.ubuntu.com
 cache_peer archive.ubuntu.com parent 80 0 default originserver forceddomain=archive.ubuntu.com max-conn=1 name=ubuntu_archive_origin
 cache_peer_access ubuntu_archive_origin allow ubuntu_archive_mirror
@@ -136,4 +131,49 @@ refresh_pattern ^ftp:   1440  20% 10080
 refresh_pattern ^gopher:  1440  0%  1440
 refresh_pattern -i (/cgi-bin/|\?) 0 0%  0
 refresh_pattern .   0 20% 4320
-EOF
+'''
+
+print(CONFIG_CHUNK0.format(**ENV))
+
+with open('mirrors.txt') as f:
+  i = 0
+  for line in f:
+    # Skip blank lines and comments
+    line = line.strip()
+    if line[0] == '#':
+      continue
+    elif '#' in line:
+      line = line[:line.index('#')]
+
+    # Parse proxy URL
+    url = urlparse(line)
+
+    # Skip origin server
+    if url.hostname == 'archive.ubuntu.com':
+      continue
+
+    i += 1
+    proxy = {
+      'url': line,
+      'name': 'ubuntu_archive_peer%03d' % i,
+      'scheme': url.scheme or 'http',
+      'netloc': url.netloc,
+      'path': os.path.normpath(url.path) if url.path else '',
+      'username': url.username,
+      'password': url.password,
+      'hostname': url.hostname,
+      'port': url.port or 80,
+    }
+
+    # These proxies are most reliable
+    is_ubuntu = url.hostname.endswith('.ubuntu.com')
+    is_tld_approved = url.hostname.rsplit('.', 1)[-1] in ('org', 'edu')
+    is_approved_proxy = is_ubuntu or is_tld_approved
+
+    # Output configuration
+    if proxy['path'] == '/ubuntu' and is_approved_proxy:
+      print(CONFIG_CHUNK1a.format(**proxy))
+    else:
+      print(CONFIG_CHUNK1b.format(**proxy))
+
+print(CONFIG_CHUNK2)

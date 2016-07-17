@@ -5,7 +5,10 @@ services:
     restart: always
     ports:
       - "3128:3128"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+      # - 2001:4860:4860::8888
+      # - 2001:4860:4860::8844
     volumes:
-      - cache:/var/spool/squid
-volumes:
-  cache: {}
+      - /var/cache/squid:/var/spool/squid

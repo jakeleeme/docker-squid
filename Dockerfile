@@ -11,7 +11,7 @@ ENV SQUID_DOWNLOAD_URL=http://www.squid-cache.org/Versions/v3/3.5/${SQUID_ARCHIV
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential clang && \
+    apt-get install -y --no-install-recommends build-essential clang python && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -37,10 +37,12 @@ RUN cd $SQUID_ARCHIVE && \
     cd .. && \
     rm -rf ${SQUID_ARCHIVE}*
 
-ADD squid.conf.sh .
+ADD squid.conf.py .
 ADD http://mirrors.ubuntu.com/mirrors.txt .
-RUN bash squid.conf.sh > /etc/squid/squid.conf && \
-    apt-get remove -y build-essential clang && \
+RUN python squid.conf.py > /etc/squid/squid.conf && \
+    rm squid.conf.py
+
+RUN apt-get remove -y build-essential clang python && \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf squid.conf.sh /var/lib/apt/lists/*
